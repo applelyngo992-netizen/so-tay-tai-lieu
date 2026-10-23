@@ -216,7 +216,6 @@ textarea.inp{min-height:76px;resize:vertical}
 <div id="modal" hidden></div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="config.js"></script>
 <script>
 (function(){
 'use strict';
@@ -224,9 +223,8 @@ var LOAI=[{k:'Hướng dẫn',c:'new'},{k:'Biểu mẫu',c:'doing'},{k:'Quy trì
 var WD=['Chủ Nhật','Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy'];
 function maxMB(){return state.remote?50:100}
 var state={view:'tq',q:'',docs:[],ready:false,mem:false,remote:false,role:'local',err:'',fDoc:'all',bell:false,confirm:'',modal:null,busy:''};
-var store=null,sb=null,cache=null,vidUrl='';
-var BUCKET='tai-lieu';
-var SB_CDN='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
+var store=null,cache=null,vidUrl='',PW='';
+var CHUNK=3*1024*1024+512*1024;
 function canEdit(){return state.role!=='view'}
 
 function $(s){return document.querySelector(s)}
@@ -276,21 +274,50 @@ function memStore(){
     setMeta:function(k,v){meta[k]=v;return Promise.resolve()}
   };
 }
-function remoteStore(sb){
-  function ck(r){if(r&&r.error)throw r.error;return r}
-  function pub(path){return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl}
+/* ---------- Chỗ lưu chung: Vercel (hàm /api + Blob) ---------- */
+function getPw(){try{return localStorage.getItem('sotay-pw')||''}catch(e){return ''}}
+function setPw(v){try{if(v)localStorage.setItem('sotay-pw',v);else localStorage.removeItem('sotay-pw')}catch(e){}}
+function apiDocs(method,body){
+  var opt={method:method,cache:'no-store',headers:{}};
+  if(PW)opt.headers['x-admin-password']=PW;
+  if(body){opt.headers['content-type']='application/json';opt.body=JSON.stringify(body)}
+  return fetch('/api/docs',opt).then(function(r){
+    return r.json().catch(function(){return {}}).then(function(j){
+      if(!r.ok){var e=new Error(j.error||('http '+r.status));e.status=r.status;throw e}
+      return j;
+    });
+  });
+}
+function sendChunk(key,i,piece,tries){
+  return fetch('/api/upload?id='+encodeURIComponent(key)+'&n='+i,{method:'POST',headers:{'x-admin-password':PW,'content-type':'application/octet-stream'},body:piece})
+    .then(function(r){if(!r.ok)throw new Error('upload '+r.status);return r.json()})
+    .then(function(j){if(!j.url)throw new Error('no url');return j.url},function(err){if(tries>0)return sendChunk(key,i,piece,tries-1);throw err});
+}
+function remoteStore(){
   return {
-    list:function(){return sb.from('docs').select('*').then(function(r){ck(r);return (r.data||[]).map(function(x){
-      return {id:x.id,ten:x.ten,loai:x.loai,link:x.link||'',nhan:x.nhan||'',ghichu:x.ghichu||'',ngay:x.ngay||'',fname:x.fname||'',ftype:x.ftype||'',fsize:x.fsize||0,fpath:x.fpath||'',hasFile:!!x.fpath}})})},
-    put:function(d){
-      var row={id:d.id,ten:d.ten,loai:d.loai,link:d.link||'',nhan:d.nhan||'',ghichu:d.ghichu||'',ngay:d.ngay||'',
-        fname:d.hasFile?d.fname:null,ftype:d.hasFile?d.ftype:null,fsize:d.hasFile?d.fsize:null,fpath:d.hasFile?d.fpath:null};
-      return sb.from('docs').upsert(row).then(ck).then(function(){});
+    list:function(){return apiDocs('GET').then(function(j){return (j.docs||[]).map(function(x){x.hasFile=!!(x.parts&&x.parts.length);return x})})},
+    put:function(d){var o=Object.assign({},d);delete o.hasFile;return apiDocs('POST',{op:'put',doc:o}).then(function(){})},
+    del:function(id){return apiDocs('POST',{op:'del',id:id}).then(function(){})},
+    putFile:function(key,blob,onProg){
+      var id=String(key).split('/')[0],n=Math.max(1,Math.ceil(blob.size/CHUNK)),parts=[],i=0;
+      function next(){
+        if(i>=n)return Promise.resolve(parts);
+        if(onProg)onProg(i+1,n);
+        return sendChunk(id,i,blob.slice(i*CHUNK,Math.min(blob.size,(i+1)*CHUNK)),1).then(function(u){parts.push(u);i++;return next()});
+      }
+      return next();
     },
-    del:function(id){return sb.from('docs').delete().eq('id',id).select().then(ck).then(function(r){if(!r.data||!r.data.length)throw new Error('denied')})},
-    putFile:function(path,blob){return sb.storage.from(BUCKET).upload(path,blob,{contentType:blob.type||undefined,upsert:true,cacheControl:'3600'}).then(ck).then(function(){})},
-    getFile:function(path){return fetch(pub(path)).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.blob()})},
-    delFile:function(path){return sb.storage.from(BUCKET).remove([path]).then(ck).then(function(){})},
+    getFile:function(key,d){
+      var urls=(d&&d.parts)||[];
+      if(!urls.length)return Promise.resolve(null);
+      var out=[],i=0;
+      function next(){
+        if(i>=urls.length)return Promise.resolve(new Blob(out,{type:d.ftype||'application/octet-stream'}));
+        return fetch(urls[i]).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.blob()}).then(function(b){out.push(b);i++;return next()});
+      }
+      return next();
+    },
+    delFile:function(){return Promise.resolve()},
     getMeta:function(){return Promise.resolve(1)},
     setMeta:function(){return Promise.resolve()}
   };
@@ -458,11 +485,10 @@ function openForm(id){
 function openLogin(){
   state.modal={login:true};
   $('#modal').innerHTML='<div class="scrim" data-act="close"></div><form class="dlg" id="login" role="dialog" aria-modal="true" aria-labelledby="dlg-t" novalidate><h2 id="dlg-t">Đăng nhập quản lý</h2>'+
-    field('l-mail','Email','<input class="inp" id="l-mail" type="email" autocomplete="username" inputmode="email">')+
-    field('l-pass','Mật khẩu','<input class="inp" id="l-pass" type="password" autocomplete="current-password">')+
+    field('l-pass','Mật khẩu quản lý','<input class="inp" id="l-pass" type="password" autocomplete="current-password">')+
     '<div class="err" id="l-err" role="alert"></div><div class="dlg-foot"><button type="button" class="btn ghost" data-act="close">Hủy</button><button type="submit" class="btn" id="l-go">Đăng nhập</button></div></form>';
   $('#modal').hidden=false;
-  setTimeout(function(){var f=$('#l-mail');if(f)f.focus()},30);
+  setTimeout(function(){var f=$('#l-pass');if(f)f.focus()},30);
 }
 function closeModal(){
   state.modal=null;$('#modal').hidden=true;$('#modal').innerHTML='';
@@ -481,7 +507,7 @@ function saveBlob(d,blob){
   setTimeout(function(){URL.revokeObjectURL(u)},4000);
 }
 function fileKey(d){return d.fpath||d.id}
-function getBlob(d){return store.getFile(fileKey(d))}
+function getBlob(d){return store.getFile(fileKey(d),d)}
 function doShare(d,file){
   var data={files:[file],title:d.ten};
   if(!(navigator.canShare&&navigator.canShare(data))){
@@ -536,13 +562,16 @@ function saveDoc(id){
 document.addEventListener('submit',function(e){
   if(e.target.id==='login'){
     e.preventDefault();
-    var em=val('l-mail'),pw=($('#l-pass')||{}).value||'';
-    if(!em||!pw){$('#l-err').textContent='Anh nhập email và mật khẩu nhé.';return}
+    var pw=($('#l-pass')||{}).value||'';
+    if(!pw){$('#l-err').textContent='Anh nhập mật khẩu nhé.';return}
     var go=$('#l-go');go.disabled=true;go.textContent='Đang vào…';
-    sb.auth.signInWithPassword({email:em,password:pw}).then(function(r){
-      if(r.error)throw r.error;
-      state.role='admin';closeModal();toast('Đã đăng nhập');refresh();
-    }).catch(function(){go.disabled=false;go.textContent='Đăng nhập';$('#l-err').textContent='Sai email hoặc mật khẩu. Anh thử lại nhé.'});
+    PW=pw;
+    apiDocs('POST',{op:'login'}).then(function(){
+      setPw(pw);state.role='admin';closeModal();toast('Đã đăng nhập');refresh();
+    },function(err){
+      PW='';go.disabled=false;go.textContent='Đăng nhập';
+      $('#l-err').textContent=(err&&err.status===401)?'Sai mật khẩu. Anh thử lại nhé.':'Chưa đăng nhập được. Anh kiểm tra mạng rồi thử lại nhé.';
+    });
     return;
   }
   if(e.target.id!=='form')return;
@@ -561,7 +590,7 @@ document.addEventListener('submit',function(e){
   var rm=!!($('#f-rm')&&$('#f-rm').checked);
   var o={id:old?old.id:newId(),ten:val('f-ten'),loai:val('f-loai'),link:link,nhan:val('f-nhan'),ghichu:val('f-gc'),ngay:today()};
   if(old){
-    if(old.hasFile&&!file&&!rm){o.hasFile=true;o.fname=old.fname;o.ftype=old.ftype;o.fsize=old.fsize;if(old.fpath)o.fpath=old.fpath}
+    if(old.hasFile&&!file&&!rm){o.hasFile=true;o.fname=old.fname;o.ftype=old.ftype;o.fsize=old.fsize;if(old.fpath)o.fpath=old.fpath;if(old.parts)o.parts=old.parts}
   }
   var oldKey=(old&&old.hasFile)?fileKey(old):'';
   var btn=$('#f-save');btn.disabled=true;btn.textContent=file?'Đang lưu file…':'Đang lưu…';
@@ -570,7 +599,7 @@ document.addEventListener('submit',function(e){
     var ft=file.type||(/\.pdf$/i.test(file.name)?'application/pdf':'video/mp4');
     var ext=(file.name.match(/\.([A-Za-z0-9]{1,5})$/)||[])[1]||'bin';
     o.hasFile=true;o.fname=file.name;o.ftype=ft;o.fsize=file.size;o.fpath=o.id+'/'+Date.now().toString(36)+'.'+ext.toLowerCase();
-    p=store.putFile(o.fpath,file);
+    p=store.putFile(o.fpath,file,function(i,n){if(n>1)btn.textContent='Đang tải lên '+i+'/'+n+'…'}).then(function(parts){if(parts)o.parts=parts});
   }else if(old&&old.hasFile&&rm){p=store.delFile(oldKey)}
   p.then(function(){return store.put(o)}).then(function(){
     if(file&&oldKey)Promise.resolve(store.delFile(oldKey)).catch(function(){});
@@ -590,7 +619,7 @@ document.addEventListener('click',function(e){
   var a=el.getAttribute('data-act'),id=el.getAttribute('data-id');
   if(a==='nav'){state.view=el.getAttribute('data-v');refresh();window.scrollTo(0,0)}
   else if(a==='login')openLogin();
-  else if(a==='logout'){if(sb)sb.auth.signOut().then(function(){state.role='view';refresh();toast('Đã đăng xuất')})}
+  else if(a==='logout'){setPw('');PW='';state.role='view';refresh();toast('Đã đăng xuất')}
   else if(a==='add'){if(canEdit())openForm(null)}
   else if(a==='edit')openForm(id);
   else if(a==='close')closeModal();
@@ -617,17 +646,17 @@ document.addEventListener('click',function(e){
 
 /* ---------- Khởi động ---------- */
 if(location.hash==='#tailieu')state.view='tl';
-function loadScript(src){return new Promise(function(res,rej){var t=setTimeout(function(){rej(new Error('timeout'))},12000);var el=document.createElement('script');el.src=src;el.async=true;el.onload=function(){clearTimeout(t);res()};el.onerror=function(){clearTimeout(t);rej(new Error('load'))};document.head.appendChild(el)})}
 function startRemote(){
-  var c=window.SOTAY_CONFIG||{};
-  if(!c.supabaseUrl||!c.supabaseKey)return Promise.resolve(false);
-  state.remote=true;state.role='view';
-  return Promise.resolve(window.supabase?0:loadScript(SB_CDN)).then(function(){
-    sb=window.supabase.createClient(c.supabaseUrl,c.supabaseKey);
-    store=remoteStore(sb);
-    sb.auth.onAuthStateChange(function(ev,session){var r=session?'admin':'view';if(r!==state.role){state.role=r;refresh()}});
-    return sb.auth.getSession().then(function(r){state.role=(r&&r.data&&r.data.session)?'admin':'view'});
-  }).then(function(){return reload()},function(){state.ready=true;state.err='Chưa nối được chỗ lưu chung. Anh kiểm tra mạng rồi tải lại trang nhé.';refresh()}).then(function(){return true});
+  return fetch('/api/docs',{cache:'no-store'}).then(function(r){
+    if(r.status===503||r.status===404||r.status===405)return false;
+    state.remote=true;state.role='view';store=remoteStore();PW=getPw();
+    var chk=PW?apiDocs('POST',{op:'login'}).then(function(){state.role='admin'},function(err){if(err&&err.status===401){setPw('');PW=''}}):Promise.resolve();
+    return chk.then(function(){return reload()}).then(function(){return true});
+  },function(){
+    if(location.protocol==='file:')return false;
+    state.remote=true;state.role='view';store=remoteStore();state.ready=true;
+    state.err='Chưa nối được chỗ lưu chung. Anh kiểm tra mạng rồi tải lại trang nhé.';refresh();return true;
+  });
 }
 refresh();
 startRemote().then(function(isRemote){
