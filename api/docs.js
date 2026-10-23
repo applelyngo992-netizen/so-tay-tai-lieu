@@ -111,6 +111,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'method' });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ error: 'server' });
+    return res.status(500).json({ error: 'server', detail: String((e && e.message) || e).slice(0, 300) });
   }
 }
