@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 /* Đã bật Blob và đặt mật khẩu quản lý chưa */
 export function configured() {
-  return !!(process.env.BLOB_READ_WRITE_TOKEN && process.env.ADMIN_PASSWORD);
+  return !!((process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID) && process.env.ADMIN_PASSWORD);
 }
 
 function digest(s) {
