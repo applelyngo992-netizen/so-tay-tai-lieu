@@ -16,6 +16,7 @@
   --new-bg:#E6EEF9; --new-fg:#2A4F94; --new-c:#5B8BD6;
   --doing-bg:#FFF1D6; --doing-fg:#8A5A00; --doing-c:#E0A100;
   --wait-bg:#EEE6FA; --wait-fg:#5B3AA3; --wait-c:#8E6CD9;
+  --ok-bg:#DDF3E8; --ok-fg:#1B6B45; --ok-c:#2FA36B;
   --oth-bg:#E8EDF2; --oth-fg:#46586B; --oth-c:#8696A8;
   --bad:#B83232; --bad-bg:#FBE5E5; --scrim:rgba(14,21,34,.45);
   --font:'Be Vietnam Pro',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
@@ -29,6 +30,7 @@
     --new-bg:#1C2B49; --new-fg:#9DBBEF; --new-c:#6C9BFF;
     --doing-bg:#3A2D10; --doing-fg:#F2C45C; --doing-c:#E9B63A;
     --wait-bg:#2C2348; --wait-fg:#C3ABF3; --wait-c:#A58AE6;
+    --ok-bg:#16352A; --ok-fg:#8DE0B5; --ok-c:#3FBF82;
     --oth-bg:#232E3E; --oth-fg:#B4C0CF; --oth-c:#7F90A5;
     --bad:#F07272; --bad-bg:#3A1C1F; --scrim:rgba(0,0,0,.6);
     color-scheme:dark;
@@ -108,7 +110,7 @@ button.user:hover{background:var(--soft)}
 .donutrow{display:flex;flex-wrap:wrap;align-items:center;gap:16px 24px}
 .donut{width:150px;height:150px;flex:none}
 .donut .ring{stroke:var(--line)}
-.donut .seg.c-new{stroke:var(--new-c)}.donut .seg.c-doing{stroke:var(--doing-c)}.donut .seg.c-wait{stroke:var(--wait-c)}.donut .seg.c-oth{stroke:var(--oth-c)}
+.donut .seg.c-new{stroke:var(--new-c)}.donut .seg.c-doing{stroke:var(--doing-c)}.donut .seg.c-wait{stroke:var(--wait-c)}.donut .seg.c-ok{stroke:var(--ok-c)}.donut .seg.c-oth{stroke:var(--oth-c)}
 .donut .big{font-size:24px;font-weight:700;fill:var(--ink);text-anchor:middle}
 .donut .small{font-size:9px;fill:var(--muted);text-anchor:middle}
 .legend{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;flex:1;min-width:150px}
@@ -143,7 +145,7 @@ button.user:hover{background:var(--soft)}
 .acts button.danger{color:var(--bad)}
 .acts button.sure{background:var(--bad);color:#fff}
 .pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
-.lt-new{background:var(--new-bg);color:var(--new-fg)}.lt-doing{background:var(--doing-bg);color:var(--doing-fg)}.lt-wait{background:var(--wait-bg);color:var(--wait-fg)}.lt-oth{background:var(--oth-bg);color:var(--oth-fg)}
+.lt-new{background:var(--new-bg);color:var(--new-fg)}.lt-doing{background:var(--doing-bg);color:var(--doing-fg)}.lt-wait{background:var(--wait-bg);color:var(--wait-fg)}.lt-ok{background:var(--ok-bg);color:var(--ok-fg)}.lt-oth{background:var(--oth-bg);color:var(--oth-fg)}
 .tag{display:inline-block;margin:2px 4px 0 0;padding:1px 8px;border-radius:6px;border:1px solid var(--line);background:var(--soft);font-size:12px;color:var(--muted)}
 button.tag:hover{border-color:var(--accent);color:var(--accent)}
 .ex{display:inline-block;margin-left:6px;padding:0 6px;border-radius:5px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:600;vertical-align:1px}
@@ -219,7 +221,7 @@ textarea.inp{min-height:76px;resize:vertical}
 <script>
 (function(){
 'use strict';
-var LOAI=[{k:'Hướng dẫn',c:'new'},{k:'Biểu mẫu',c:'doing'},{k:'Quy trình',c:'wait'},{k:'Khác',c:'oth'}];
+var LOAI=[{k:'Hướng dẫn',c:'new'},{k:'Biểu mẫu',c:'doing'},{k:'Quy trình',c:'wait'},{k:'Tài liệu',c:'ok'},{k:'Khác',c:'oth'}];
 var WD=['Chủ Nhật','Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy'];
 function maxMB(){return state.remote?50:100}
 var state={view:'tq',q:'',docs:[],ready:false,mem:false,remote:false,role:'local',err:'',fDoc:'all',bell:false,confirm:'',modal:null,busy:''};
@@ -233,7 +235,7 @@ function norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[�
 function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function today(){return ymd(new Date())}
 function fmt(s){if(!s)return '—';var p=s.split('-');return p[2]+'/'+p[1]}
-function lo(k){for(var i=0;i<LOAI.length;i++)if(LOAI[i].k===k)return LOAI[i];return LOAI[3]}
+function lo(k){for(var i=0;i<LOAI.length;i++)if(LOAI[i].k===k)return LOAI[i];return LOAI[LOAI.length-1]}
 function tags(s){return String(s||'').split(',').map(function(x){return x.trim()}).filter(Boolean)}
 function newId(){return 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function ico(n){
