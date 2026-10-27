@@ -122,6 +122,12 @@ button.user:hover{background:var(--soft)}
 .tb i{position:absolute;top:0;bottom:0;left:0;background:var(--accent-soft)}
 .tb span{position:relative}
 .tb .n{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;margin-top:10px}
+.thumb{border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--surface);text-align:center}
+.thumb img{width:100%;height:84px;object-fit:cover;border-radius:6px;display:block}
+.thumb .tb{display:flex;gap:4px;justify-content:center;margin-top:6px}
+.thumb button{border:1px solid var(--line);background:var(--surface);border-radius:6px;min-width:30px;height:30px;font-size:14px;cursor:pointer;color:inherit}
+.thumb .no{font-size:12px;color:var(--muted);margin-top:4px}
 .cap{color:var(--muted);font-size:12.5px;margin-top:8px}
 
 .chips{display:flex;flex-wrap:wrap;gap:8px}
@@ -467,16 +473,89 @@ function refresh(){renderUser();renderNav();renderView()}
 
 /* ---------- Hộp nhập ---------- */
 function field(id,label,inner,note){return '<div class="fld"><label for="'+id+'">'+label+'</label>'+inner+(note?'<small>'+note+'</small>':'')+'</div>'}
+
+/* ---------- Ghép ảnh thành PDF ---------- */
+var MAXIMG=40;
+function drawThumbs(){
+  var box=$('#f-thumbs');if(!box)return;
+  var im=state.imgs||[];
+  box.innerHTML=im.map(function(x,i){return '<div class="thumb"><img src="'+x.url+'" alt=""><div class="no">Ảnh '+(i+1)+'</div><div class="tb">'+
+    '<button type="button" data-act="imgup" data-i="'+i+'" aria-label="Đưa lên"'+(i===0?' disabled':'')+'>↑</button>'+
+    '<button type="button" data-act="imgdn" data-i="'+i+'" aria-label="Đưa xuống"'+(i===im.length-1?' disabled':'')+'>↓</button>'+
+    '<button type="button" data-act="imgrm" data-i="'+i+'" aria-label="Bỏ ảnh">✕</button></div></div>'}).join('');
+}
+function imgToJpeg(file){
+  return new Promise(function(res,rej){
+    var u=URL.createObjectURL(file),im=new Image();
+    im.onload=function(){
+      var w=im.naturalWidth,h=im.naturalHeight,M=1800,k=Math.min(1,M/Math.max(w,h));
+      var cw=Math.max(1,Math.round(w*k)),ch=Math.max(1,Math.round(h*k));
+      var c=document.createElement('canvas');c.width=cw;c.height=ch;
+      var g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,cw,ch);g.drawImage(im,0,0,cw,ch);
+      URL.revokeObjectURL(u);
+      c.toBlob(function(b){
+        if(!b)return rej(new Error('jpeg'));
+        var fr=new FileReader();fr.onload=function(){res({w:cw,h:ch,bytes:new Uint8Array(fr.result)})};fr.onerror=rej;fr.readAsArrayBuffer(b);
+      },'image/jpeg',0.85);
+    };
+    im.onerror=function(){URL.revokeObjectURL(u);rej(new Error('img'))};
+    im.src=u;
+  });
+}
+/* Viết file PDF: mỗi ảnh một trang A4 (xoay ngang nếu ảnh ngang) */
+function buildPdf(pgs){
+  var enc=new TextEncoder(),parts=[],len=0,offs=[],n=pgs.length;
+  function add(x){var u=typeof x==='string'?enc.encode(x):x;parts.push(u);len+=u.length}
+  function obj(i,body){offs[i]=len;add(i+' 0 obj\n'+body+'\nendobj\n')}
+  function f2(v){return (Math.round(v*100)/100).toString()}
+  add('%PDF-1.4\n');
+  var kids=[];for(var i=0;i<n;i++)kids.push((3+3*i)+' 0 R');
+  obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2,'<< /Type /Pages /Kids ['+kids.join(' ')+'] /Count '+n+' >>');
+  pgs.forEach(function(p,i){
+    var land=p.w>p.h,W=land?842:595,H=land?595:842,m=20,s=Math.min((W-2*m)/p.w,(H-2*m)/p.h),dw=p.w*s,dh=p.h*s,x=(W-dw)/2,y=(H-dh)/2;
+    var pg=3+3*i,ct=4+3*i,im=5+3*i;
+    obj(pg,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /XObject << /Im0 '+im+' 0 R >> >> /Contents '+ct+' 0 R >>');
+    var cs='q '+f2(dw)+' 0 0 '+f2(dh)+' '+f2(x)+' '+f2(y)+' cm /Im0 Do Q';
+    obj(ct,'<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream');
+    offs[im]=len;
+    add(im+' 0 obj\n<< /Type /XObject /Subtype /Image /Width '+p.w+' /Height '+p.h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+p.bytes.length+' >>\nstream\n');
+    add(p.bytes);add('\nendstream\nendobj\n');
+  });
+  var N=2+3*n,xr=len;
+  add('xref\n0 '+(N+1)+'\n0000000000 65535 f \n');
+  for(var j=1;j<=N;j++)add(('0000000000'+offs[j]).slice(-10)+' 00000 n \n');
+  add('trailer\n<< /Size '+(N+1)+' /Root 1 0 R >>\nstartxref\n'+xr+'\n%%EOF');
+  return new Blob(parts,{type:'application/pdf'});
+}
+function imagesToPdf(list){
+  var out=[],chain=Promise.resolve();
+  list.forEach(function(x){chain=chain.then(function(){return imgToJpeg(x.file)}).then(function(j){out.push(j)})});
+  return chain.then(function(){return buildPdf(out)});
+}
+function pdfName(t){
+  var n=String(t||'').replace(/[\\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim().slice(0,80)||'tai-lieu';
+  return n+'.pdf';
+}
+document.addEventListener('change',function(e){
+  if(!e.target||e.target.id!=='f-img')return;
+  var fl=Array.prototype.slice.call(e.target.files||[]).filter(function(f){return /^image\//.test(f.type)||/\.(jpe?g|png|webp|gif|bmp|heic)$/i.test(f.name)});
+  state.imgs=state.imgs||[];
+  fl.forEach(function(f){if(state.imgs.length<MAXIMG)state.imgs.push({file:f,url:URL.createObjectURL(f)})});
+  if(fl.length&&state.imgs.length>=MAXIMG)toast('Tối đa '+MAXIMG+' ảnh cho một file.');
+  e.target.value='';drawThumbs();
+});
 function openForm(id){
   var o=id?state.docs.filter(function(x){return x.id===id})[0]:null;
   if(id&&!o)return;
-  state.modal={id:id||null};
+  state.modal={id:id||null};state.imgs=[];
   o=o||{loai:'Hướng dẫn'};
   var cur=o.hasFile?'<div class="cap">Đang có file: <b>'+esc(o.fname||'')+'</b></div><label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="f-rm"> Bỏ file này</label>':'';
   var h='<h2 id="dlg-t">'+(id?'Sửa tài liệu':'Thêm tài liệu mới')+'</h2>'+
     field('f-ten','Tên tài liệu','<input class="inp" id="f-ten" value="'+esc(o.ten)+'" autocomplete="off">')+
     field('f-loai','Loại','<select class="inp" id="f-loai">'+LOAI.map(function(l){return '<option'+(l.k===o.loai?' selected':'')+'>'+esc(l.k)+'</option>'}).join('')+'</select>')+
     field('f-file','Tải file lên (PDF hoặc video)','<input class="inp" type="file" id="f-file" accept="application/pdf,video/*">'+cur,'Tối đa '+maxMB()+' MB mỗi file.')+
+    field('f-img','Hoặc chọn ảnh để ghép thành 1 file PDF','<input class="inp" type="file" id="f-img" accept="image/*" multiple><div class="thumbs" id="f-thumbs"></div>','Chọn nhiều ảnh cùng lúc hoặc chọn thêm nhiều lần. File PDF sẽ lấy tên của tài liệu.')+
     field('f-link','Đường dẫn (nếu có)','<input class="inp" id="f-link" type="url" inputmode="url" value="'+esc(o.link)+'" placeholder="https://" autocomplete="off">','Dán link Google Drive hoặc trang hướng dẫn của công ty.')+
     field('f-nhan','Nhãn','<input class="inp" id="f-nhan" value="'+esc(o.nhan)+'" autocomplete="off">','Cách nhau bằng dấu phẩy. Ví dụ: máy POS, lắp đặt')+
     field('f-gc','Ghi chú','<textarea class="inp" id="f-gc">'+esc(o.ghichu)+'</textarea>');
@@ -493,6 +572,7 @@ function openLogin(){
   setTimeout(function(){var f=$('#l-pass');if(f)f.focus()},30);
 }
 function closeModal(){
+  (state.imgs||[]).forEach(function(x){try{URL.revokeObjectURL(x.url)}catch(e){}});state.imgs=[];
   state.modal=null;$('#modal').hidden=true;$('#modal').innerHTML='';
   if(vidUrl){URL.revokeObjectURL(vidUrl);vidUrl=''}
 }
@@ -589,6 +669,9 @@ document.addEventListener('submit',function(e){
     if(!okT){$('#f-err').textContent='Chỉ tải được file PDF hoặc video.';return}
     if(file.size>maxMB()*1024*1024){$('#f-err').textContent='File lớn hơn '+maxMB()+' MB nên chưa tải được. Anh để file ở Google Drive rồi dán link nhé.';return}
   }
+  var imgs=state.imgs||[];
+  if(file&&imgs.length){$('#f-err').textContent='Anh chọn file hoặc chọn ảnh thôi, đừng chọn cả hai nhé.';return}
+  function finish(file){
   var rm=!!($('#f-rm')&&$('#f-rm').checked);
   var o={id:old?old.id:newId(),ten:val('f-ten'),loai:val('f-loai'),link:link,nhan:val('f-nhan'),ghichu:val('f-gc'),ngay:today()};
   if(old){
@@ -609,6 +692,16 @@ document.addEventListener('submit',function(e){
     try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(x){}
     closeModal();toast('Đã lưu');return reload();
   }).catch(function(){btn.disabled=false;btn.textContent='Lưu';$('#f-err').textContent=state.remote?'Chưa lưu được. Anh bấm Đăng xuất, đăng nhập quản lý lại rồi thử nhé.':'Chưa lưu được. Máy có thể đã hết chỗ trống, anh thử file nhỏ hơn nhé.'});
+  }
+  if(imgs.length){
+    var b0=$('#f-save');b0.disabled=true;b0.textContent='Đang ghép ảnh…';$('#f-err').textContent='';
+    imagesToPdf(imgs).then(function(blob){
+      if(blob.size>maxMB()*1024*1024){b0.disabled=false;b0.textContent='Lưu';$('#f-err').textContent='Các ảnh ghép lại lớn hơn '+maxMB()+' MB. Anh bớt ảnh rồi thử lại nhé.';return}
+      var nm=pdfName(val('f-ten'));
+      var f;try{f=new File([blob],nm,{type:'application/pdf'})}catch(x){f=blob;f.name=nm}
+      finish(f);
+    },function(){b0.disabled=false;b0.textContent='Lưu';$('#f-err').textContent='Có ảnh không đọc được. Anh bỏ ảnh đó hoặc chọn ảnh khác nhé.'});
+  }else finish(file);
 });
 $('#q').addEventListener('input',function(e){state.q=e.target.value;renderView()});
 document.addEventListener('keydown',function(e){
@@ -624,6 +717,12 @@ document.addEventListener('click',function(e){
   else if(a==='logout'){setPw('');PW='';state.role='view';refresh();toast('Đã đăng xuất')}
   else if(a==='add'){if(canEdit())openForm(null)}
   else if(a==='edit')openForm(id);
+  else if(a==='imgup'||a==='imgdn'||a==='imgrm'){
+    var ix=+el.getAttribute('data-i'),L=state.imgs||[];
+    if(a==='imgrm'){var r=L.splice(ix,1)[0];if(r)URL.revokeObjectURL(r.url)}
+    else{var j=a==='imgup'?ix-1:ix+1;if(j>=0&&j<L.length){var t=L[ix];L[ix]=L[j];L[j]=t}}
+    drawThumbs();
+  }
   else if(a==='close')closeModal();
   else if(a==='fdoc'){state.fDoc=el.getAttribute('data-v');renderView()}
   else if(a==='tag'){state.q=el.getAttribute('data-v');$('#q').value=state.q;renderView()}
