@@ -2,7 +2,7 @@ import { put, del, list } from '@vercel/blob';
 import { configured, isAdmin, isBlobUrl } from './_lib.js';
 
 const PATH = 'docs.json';
-const LOAI = ['Hướng dẫn', 'Biểu mẫu', 'Quy trình', 'Tài liệu', 'Form', 'Khác'];
+const LOAI = ['Hướng dẫn', 'Biểu mẫu', 'Quy trình', 'Tài liệu', 'From', 'Khác'];
 
 function str(v, n) {
   return String(v == null ? '' : v).slice(0, n);
