@@ -74,6 +74,11 @@ option{background:var(--surface);color:var(--ink)}
 .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
 .search input{width:100%;min-width:0;padding:9px 12px 9px 38px;border:1px solid var(--line);border-radius:8px;background:var(--soft)}
 .search input::placeholder{color:var(--muted)}
+.search input{padding-right:40px}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+.qclear{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:0;border-radius:8px;background:none;color:var(--muted);font-size:16px;cursor:pointer}
+.qclear:hover{background:var(--line)}
+.qclear[hidden]{display:none}
 .top-r{margin-left:auto;display:flex;align-items:center;gap:8px}
 .bellwrap{position:relative}
 .iconbtn{position:relative;width:38px;height:38px;border-radius:8px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;color:var(--muted)}
@@ -228,6 +233,7 @@ body.hassel .toast{bottom:calc(92px + env(safe-area-inset-bottom,0px))}
       <div class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="q" type="search" autocomplete="off" placeholder="Tìm tài liệu, nhãn, tên file" aria-label="Tìm tài liệu, nhãn hoặc tên file. Gõ không dấu cũng được">
+        <button type="button" class="qclear" id="qclear" data-act="qclear" aria-label="Xóa chữ tìm kiếm" hidden>✕</button>
       </div>
       <div class="top-r">
         <div class="bellwrap" id="bellwrap"></div>
@@ -641,7 +647,7 @@ function openForm(id){
     field('f-nhan','Nhãn','<input class="inp" id="f-nhan" value="'+esc(o.nhan)+'" autocomplete="off">','Cách nhau bằng dấu phẩy. Ví dụ: máy POS, lắp đặt')+
     field('f-gc','Ghi chú','<textarea class="inp" id="f-gc">'+esc(o.ghichu)+'</textarea>');
   $('#modal').innerHTML='<div class="scrim" data-act="close"></div><form class="dlg" id="form" role="dialog" aria-modal="true" aria-labelledby="dlg-t" novalidate>'+h+'<div class="err" id="f-err" role="alert"></div><div class="dlg-foot"><button type="button" class="btn ghost" data-act="close">Hủy</button><button type="submit" class="btn" id="f-save">Lưu</button></div></form>';
-  $('#modal').hidden=false;
+  $('#modal').hidden=false;pushModal();
   setTimeout(function(){var f=$('#f-ten');if(f)f.focus()},30);
 }
 function openLogin(){
@@ -649,10 +655,17 @@ function openLogin(){
   $('#modal').innerHTML='<div class="scrim" data-act="close"></div><form class="dlg" id="login" role="dialog" aria-modal="true" aria-labelledby="dlg-t" novalidate><h2 id="dlg-t">Đăng nhập quản lý</h2>'+
     field('l-pass','Mật khẩu quản lý','<input class="inp" id="l-pass" type="password" autocomplete="current-password">')+
     '<div class="err" id="l-err" role="alert"></div><div class="dlg-foot"><button type="button" class="btn ghost" data-act="close">Hủy</button><button type="submit" class="btn" id="l-go">Đăng nhập</button></div></form>';
-  $('#modal').hidden=false;
+  $('#modal').hidden=false;pushModal();
   setTimeout(function(){var f=$('#l-pass');if(f)f.focus()},30);
 }
+var modalPushed=false;
+function pushModal(){try{history.pushState({m:1},'');modalPushed=true}catch(e){}}
+function setView(v){if(state.view!==v){state.view=v;try{history.pushState({v:v},'')}catch(e){}}}
 function closeModal(){
+  if(modalPushed){modalPushed=false;try{history.back()}catch(e){}}
+  hideModal();
+}
+function hideModal(){
   (state.imgs||[]).forEach(function(x){try{URL.revokeObjectURL(x.url)}catch(e){}});state.imgs=[];
   state.modal=null;$('#modal').hidden=true;$('#modal').innerHTML='';
   if(vidUrl){URL.revokeObjectURL(vidUrl);vidUrl=''}
@@ -708,7 +721,7 @@ function openDoc(id){
     if(isVideo(d)){
       vidUrl=URL.createObjectURL(b);state.modal={play:true};
       $('#modal').innerHTML='<div class="scrim" data-act="close"></div><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t"><h2 id="dlg-t">'+esc(d.ten)+'</h2><video class="vid" controls playsinline preload="metadata" src="'+vidUrl+'"></video><div class="dlg-foot"><button type="button" class="btn ghost" data-act="close">Đóng</button></div></div>';
-      $('#modal').hidden=false;
+      $('#modal').hidden=false;pushModal();
     }else{
       var u=URL.createObjectURL(b),a=document.createElement('a');
       a.href=u;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
@@ -785,7 +798,8 @@ document.addEventListener('submit',function(e){
     },function(){b0.disabled=false;b0.textContent='Lưu';$('#f-err').textContent='Có ảnh không đọc được. Anh bỏ ảnh đó hoặc chọn ảnh khác nhé.'});
   }else finish(file);
 });
-$('#q').addEventListener('input',function(e){state.q=e.target.value;renderView()});
+function syncQ(){var c=$('#qclear');if(c)c.hidden=!state.q}
+$('#q').addEventListener('input',function(e){state.q=e.target.value;syncQ();renderView()});
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape'){if(state.modal)closeModal();else if(state.bell){state.bell=false;renderNav()}}
 });
@@ -794,7 +808,7 @@ document.addEventListener('click',function(e){
   if(state.bell&&!e.target.closest('.bellwrap')){state.bell=false;renderNav()}
   var el=e.target.closest('[data-act]');if(!el)return;
   var a=el.getAttribute('data-act'),id=el.getAttribute('data-id');
-  if(a==='nav'){state.view=el.getAttribute('data-v');refresh();window.scrollTo(0,0)}
+  if(a==='nav'){setView(el.getAttribute('data-v'));refresh();window.scrollTo(0,0)}
   else if(a==='login')openLogin();
   else if(a==='logout'){setPw('');PW='';state.role='view';refresh();toast('Đã đăng xuất')}
   else if(a==='add'){if(canEdit())openForm(null)}
@@ -816,14 +830,15 @@ document.addEventListener('click',function(e){
     if(sd.sao)delete so.sao;else so.sao=true;
     store.put(so).then(function(){return reload()},function(){toast('Chưa lưu được. Anh đăng nhập quản lý lại nhé.')});
   }
+  else if(a==='qclear'){state.q='';$('#q').value='';syncQ();renderView();$('#q').focus()}
   else if(a==='close')closeModal();
   else if(a==='fdoc'){state.fDoc=el.getAttribute('data-v');renderView()}
-  else if(a==='tag'){state.q=el.getAttribute('data-v');$('#q').value=state.q;renderView()}
+  else if(a==='tag'){state.q=el.getAttribute('data-v');$('#q').value=state.q;syncQ();renderView()}
   else if(a==='open')openDoc(id);
   else if(a==='save')saveDoc(id);
   else if(a==='share')shareDoc(id);
   else if(a==='bell'){state.bell=!state.bell;renderNav()}
-  else if(a==='bellgo'){state.bell=false;state.view='tl';state.fDoc='all';refresh()}
+  else if(a==='bellgo'){state.bell=false;setView('tl');state.fDoc='all';refresh()}
   else if(a==='del'){
     if(state.confirm!==id){state.confirm=id;renderView();clearTimeout(confT);confT=setTimeout(function(){state.confirm='';renderView()},3500)}
     else{
@@ -840,6 +855,14 @@ document.addEventListener('click',function(e){
 
 /* ---------- Khởi động ---------- */
 if(location.hash==='#tailieu')state.view='tl';
+try{history.replaceState({v:state.view},'')}catch(e){}
+window.addEventListener('popstate',function(e){
+  if(state.modal){modalPushed=false;hideModal();return}
+  if(state.bell){state.bell=false}
+  var v=(e.state&&e.state.v)||'tq';
+  if(e.state&&e.state.m)return;
+  state.view=v;refresh();window.scrollTo(0,0);
+});
 function startRemote(){
   return fetch('/api/docs',{cache:'no-store'}).then(function(r){
     if(r.status===503||r.status===404||r.status===405)return false;
