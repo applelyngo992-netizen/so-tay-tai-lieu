@@ -6,6 +6,12 @@
 <title>Sổ Tay Tài Liệu</title>
 <meta name="description" content="Gom tài liệu hướng dẫn vào một chỗ, tìm nhanh, gửi PDF và video qua Zalo.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232457C5'/%3E%3Cpath d='M10 8h9a3 3 0 0 1 3 3v13h-9a3 3 0 0 1-3-3z' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#13203A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sổ Tay">
+<link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
 /* Bố cục: menu trái + thanh trên (tìm kiếm, chuông, tên) + thẻ số liệu + biểu đồ + bảng có nhãn loại + chân trang mỏng */
@@ -128,6 +134,15 @@ button.user:hover{background:var(--soft)}
 .thumb .tb{display:flex;gap:4px;justify-content:center;margin-top:6px}
 .thumb button{border:1px solid var(--line);background:var(--surface);border-radius:6px;min-width:30px;height:30px;font-size:14px;cursor:pointer;color:inherit}
 .thumb .no{font-size:12px;color:var(--muted);margin-top:4px}
+.tbl th.sel,.tbl td.sel{width:34px;padding-right:0}
+.sel input{width:20px;height:20px;accent-color:var(--accent)}
+.star{background:none;border:0;font-size:19px;line-height:1;padding:0 6px 0 0;cursor:pointer;color:var(--muted)}
+.star.on,.starv{color:#E0A100}
+.starv{font-size:17px;margin-right:6px}
+#selbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.14)}
+#selbar[hidden]{display:none}
+body.hassel{padding-bottom:76px}
+.side-note .btn{margin-top:8px}
 .cap{color:var(--muted);font-size:12.5px;margin-top:8px}
 
 .chips{display:flex;flex-wrap:wrap;gap:8px}
@@ -177,6 +192,7 @@ textarea.inp{min-height:76px;resize:vertical}
 .dlg-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 .err{color:var(--bad);font-size:13px;min-height:1px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;z-index:60;max-width:calc(100vw - 32px);text-align:center}
+body.hassel .toast{bottom:calc(92px + env(safe-area-inset-bottom,0px))}
 
 .foot{padding-block:10px;padding-bottom:max(10px,env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:12.5px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 16px}
 
@@ -202,7 +218,7 @@ textarea.inp{min-height:76px;resize:vertical}
       <span class="bt">Sổ Tay<br>Tài Liệu</span>
     </div>
     <nav class="menu" id="menu" aria-label="Menu chính"></nav>
-    <div class="side-note"><b>Mẹo</b>Gõ không dấu vào ô tìm kiếm cũng ra tài liệu.</div>
+    <div class="side-note"><b>Mẹo</b>Gõ không dấu vào ô tìm kiếm cũng ra tài liệu.<button type="button" class="btn ghost sm" id="instbtn" data-act="install">Cài ra màn hình điện thoại</button></div>
   </aside>
 
   <div class="main">
@@ -230,7 +246,7 @@ textarea.inp{min-height:76px;resize:vertical}
 var LOAI=[{k:'Hướng dẫn',c:'new'},{k:'Biểu mẫu',c:'doing'},{k:'Quy trình',c:'wait'},{k:'Tài liệu',c:'ok'},{k:'Khác',c:'oth'}];
 var WD=['Chủ Nhật','Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy'];
 function maxMB(){return state.remote?50:100}
-var state={view:'tq',q:'',docs:[],ready:false,mem:false,remote:false,role:'local',err:'',fDoc:'all',bell:false,confirm:'',modal:null,busy:''};
+var state={view:'tq',q:'',docs:[],ready:false,mem:false,remote:false,role:'local',err:'',fDoc:'all',sel:{},bell:false,confirm:'',modal:null,busy:''};
 var store=null,cache=null,vidUrl='',PW='';
 var CHUNK=3*1024*1024+512*1024;
 function canEdit(){return state.role!=='view'}
@@ -354,7 +370,7 @@ function seed(){
 }
 
 /* ---------- Tìm kiếm ---------- */
-function sortDocs(a){return a.slice().sort(function(x,y){var nx=x.ngay||'',ny=y.ngay||'';return nx<ny?1:nx>ny?-1:String(x.ten).localeCompare(String(y.ten))})}
+function sortDocs(a,flat){return a.slice().sort(function(x,y){if(!flat&&!!x.sao!==!!y.sao)return x.sao?-1:1;var nx=x.ngay||'',ny=y.ngay||'';return nx<ny?1:nx>ny?-1:String(x.ten).localeCompare(String(y.ten))})}
 function matchDoc(d){
   if(!state.q.trim())return true;
   return norm([d.ten,d.loai,d.ghichu,d.nhan,d.link,d.fname].join(' ')).indexOf(norm(state.q.trim()))>-1;
@@ -399,13 +415,15 @@ function donut(c,total){
 function docRows(list,acts){
   return list.map(function(d){
     var sure=state.confirm===d.id;
-    return '<tr><td>'+nameOf(d)+exBadge(d)+fileChips(d)+(d.ghichu?'<div class="cap" style="margin-top:4px">'+esc(d.ghichu)+'</div>':'')+'</td><td>'+pill(d.loai)+'</td><td>'+tagBtns(d.nhan)+'</td><td>'+fmt(d.ngay)+'</td>'+
+    var cs=(d.hasFile||d.link)?'<input type="checkbox" data-act="sel" data-id="'+esc(d.id)+'" aria-label="Chọn '+esc(d.ten)+'"'+(state.sel[d.id]?' checked':'')+'>':'';
+    var st=canEdit()?'<button type="button" class="star'+(d.sao?' on':'')+'" data-act="star" data-id="'+esc(d.id)+'" aria-label="'+(d.sao?'Bỏ đánh dấu sao':'Đánh dấu sao')+'" title="'+(d.sao?'Bỏ đánh dấu':'Đánh dấu hay dùng')+'">'+(d.sao?'★':'☆')+'</button>':(d.sao?'<span class="starv" title="Hay dùng">★</span>':'');
+    return '<tr><td class="sel">'+cs+'</td><td>'+st+nameOf(d)+exBadge(d)+fileChips(d)+(d.ghichu?'<div class="cap" style="margin-top:4px">'+esc(d.ghichu)+'</div>':'')+'</td><td>'+pill(d.loai)+'</td><td>'+tagBtns(d.nhan)+'</td><td>'+fmt(d.ngay)+'</td>'+
       (acts?'<td class="acts"><button data-act="edit" data-id="'+esc(d.id)+'">Sửa</button><button class="danger'+(sure?' sure':'')+'" data-act="del" data-id="'+esc(d.id)+'">'+(sure?'Bấm lại để xóa':'Xóa')+'</button></td>':'')+'</tr>';
   }).join('');
 }
 function docTable(list,acts){
   acts=acts&&canEdit();
-  return '<div class="tablewrap"><table class="tbl '+(acts?'wide':'mid')+'"><thead><tr><th>Tên tài liệu</th><th>Loại</th><th>Nhãn</th><th>Cập nhật</th>'+(acts?'<th></th>':'')+'</tr></thead><tbody>'+docRows(list,acts)+'</tbody></table></div>';
+  return '<div class="tablewrap"><table class="tbl '+(acts?'wide':'mid')+'"><thead><tr><th class="sel"></th><th>Tên tài liệu</th><th>Loại</th><th>Nhãn</th><th>Cập nhật</th>'+(acts?'<th></th>':'')+'</tr></thead><tbody>'+docRows(list,acts)+'</tbody></table></div>';
 }
 function banner(){
   var out='';
@@ -434,18 +452,20 @@ function viewTQ(){
   var tt=topTags(),maxT=tt.length?tt[0].n:1;
   var charts='<div class="grid2"><div class="card"><h2>Tài liệu theo loại</h2>'+(total?donut(c,total):'<div class="empty-st"><b>Chưa có tài liệu nào</b>'+addHint()+'</div>')+'</div>'+
     '<div class="card"><h2>Nhãn dùng nhiều</h2>'+(tt.length?'<div class="tagbars">'+tt.map(function(t){return '<button type="button" class="tb" data-act="tag" data-v="'+esc(t.t)+'"><i style="width:'+Math.round(t.n*100/maxT)+'%"></i><span>'+esc(t.t)+'</span><span class="n">'+t.n+'</span></button>'}).join('')+'</div><div class="cap">Bấm vào một nhãn để xem các tài liệu có nhãn đó.</div>':'<div class="empty-st"><b>Chưa có nhãn nào</b>Thêm nhãn khi lưu tài liệu để tìm cho nhanh.</div>')+'</div></div>';
-  var recent=sortDocs(state.docs).slice(0,6);
+  var recent=sortDocs(state.docs,true).slice(0,6);
   var lower='<div class="card"><div class="hrow"><h2>Tài liệu mới thêm</h2><button class="link" data-act="nav" data-v="tl">Xem tất cả</button></div>'+
     (recent.length?docTable(recent,false):'<div class="empty-st"><b>Chưa có tài liệu nào</b>Tài liệu mới thêm sẽ hiện ở đây.</div>')+'</div>';
   return head+banners+stats+charts+lower;
 }
 function viewTL(){
-  var total=state.docs.length,c=countsByLoai();
+  var total=state.docs.length,c=countsByLoai(),nStar=state.docs.filter(function(d){return d.sao}).length;
+  if(state.fDoc==='star'&&!nStar)state.fDoc='all';
   var chips='<div class="chips" role="group" aria-label="Lọc theo loại"><button class="chip" aria-pressed="'+(state.fDoc==='all')+'" data-act="fdoc" data-v="all">Tất cả<span class="c">'+total+'</span></button>'+
+    (nStar?'<button class="chip" aria-pressed="'+(state.fDoc==='star')+'" data-act="fdoc" data-v="star">★ Hay dùng<span class="c">'+nStar+'</span></button>':'')+
     LOAI.map(function(l){return '<button class="chip" aria-pressed="'+(state.fDoc===l.k)+'" data-act="fdoc" data-v="'+esc(l.k)+'">'+esc(l.k)+'<span class="c">'+c[l.k]+'</span></button>'}).join('')+'</div>';
   var head='<div class="head"><div><h1>Tài liệu hướng dẫn</h1><p>Lưu file PDF, video, đường dẫn và ghi chú. Cần là tìm ra, bấm là gửi Zalo.</p></div>'+(canEdit()?'<button class="btn" data-act="add">+ Thêm tài liệu</button>':'')+'</div>';
   if(!state.ready)return head+banner()+loading();
-  var list=sortDocs(state.docs.filter(function(d){return (state.fDoc==='all'||lo(d.loai).k===state.fDoc)&&matchDoc(d)}));
+  var list=sortDocs(state.docs.filter(function(d){return (state.fDoc==='all'||(state.fDoc==='star'?!!d.sao:lo(d.loai).k===state.fDoc))&&matchDoc(d)}));
   var body=list.length?docTable(list,true):'<div class="empty-st"><b>'+(total?'Không có tài liệu nào khớp':'Chưa có tài liệu nào')+'</b>'+(total?'Thử bỏ bớt chữ tìm kiếm hoặc chọn “Tất cả”.':addHint())+'</div>';
   return head+banner()+'<div class="card" style="display:flex;flex-direction:column;gap:12px">'+chips+body+'</div>';
 }
@@ -469,7 +489,7 @@ function renderUser(){
   $('#userbox').innerHTML=h;
 }
 function renderView(){$('#view').innerHTML=state.view==='tl'?viewTL():viewTQ()}
-function refresh(){renderUser();renderNav();renderView()}
+function refresh(){renderUser();renderNav();renderView();renderSel()}
 
 /* ---------- Hộp nhập ---------- */
 function field(id,label,inner,note){return '<div class="fld"><label for="'+id+'">'+label+'</label>'+inner+(note?'<small>'+note+'</small>':'')+'</div>'}
@@ -545,6 +565,65 @@ document.addEventListener('change',function(e){
   if(fl.length&&state.imgs.length>=MAXIMG)toast('Tối đa '+MAXIMG+' ảnh cho một file.');
   e.target.value='';drawThumbs();
 });
+
+/* ---------- Chọn nhiều tài liệu để gửi một lần ---------- */
+var manyCache=null,deferredInstall=null;
+function selDocs(){return state.docs.filter(function(d){return state.sel[d.id]})}
+function renderSel(){
+  var b=document.getElementById('selbar');
+  if(!b){b=document.createElement('div');b.id='selbar';b.hidden=true;document.body.appendChild(b)}
+  Object.keys(state.sel).forEach(function(k){if(!find(k))delete state.sel[k]});
+  var n=selDocs().length;
+  document.body.classList.toggle('hassel',n>0);
+  if(!n){b.hidden=true;b.innerHTML='';return}
+  var bz=state.busy==='many';
+  b.hidden=false;
+  b.innerHTML='<span><b>Đã chọn '+n+' tài liệu</b></span><button type="button" class="btn" data-act="sharemany"'+(bz?' disabled':'')+'>'+(bz?'Đang chuẩn bị…':'Gửi Zalo '+n+' tài liệu')+'</button><button type="button" class="btn ghost" data-act="selclear">Bỏ chọn</button>';
+}
+function saveFileObj(f){
+  var u=URL.createObjectURL(f),a=document.createElement('a');
+  a.href=u;a.download=f.name||'tai-lieu';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(u)},4000);
+}
+function doShareMany(files,text,key){
+  var data={title:'Tài liệu'};
+  if(files.length)data.files=files;
+  if(text)data.text=text;
+  var okShare=navigator.share&&(!files.length||(navigator.canShare&&navigator.canShare(data)));
+  if(!okShare){
+    files.forEach(function(f,i){setTimeout(function(){saveFileObj(f)},i*400)});
+    if(text&&navigator.clipboard)navigator.clipboard.writeText(text).catch(function(){});
+    toast('Máy này chưa mở được bảng chia sẻ. Đã tải file về, anh mở Zalo rồi đính kèm các file vừa tải.',5500);
+    return Promise.resolve();
+  }
+  return navigator.share(data).then(function(){state.sel={};refresh()},function(e){
+    if(e&&e.name==='AbortError')return;
+    if(e&&e.name==='NotAllowedError'){manyCache={key:key,files:files,text:text};toast('File đã sẵn sàng. Anh bấm Gửi Zalo thêm một lần nữa nhé.',4500);return}
+    files.forEach(function(f,i){setTimeout(function(){saveFileObj(f)},i*400)});
+    toast('Chưa mở được bảng chia sẻ. Đã tải file về, anh gửi bằng Zalo nhé.',5000);
+  });
+}
+function shareMany(){
+  var L=selDocs();if(!L.length)return;
+  var key=L.map(function(d){return d.id}).sort().join(',');
+  if(manyCache&&manyCache.key===key){var mc=manyCache;manyCache=null;doShareMany(mc.files,mc.text,key);return}
+  manyCache=null;state.busy='many';renderSel();
+  var withFile=L.filter(function(d){return d.hasFile}),links=L.filter(function(d){return !d.hasFile&&d.link});
+  Promise.all(withFile.map(function(d){return getBlob(d).then(function(b){return b?toFile(d,b):null})})).then(function(files){
+    files=files.filter(Boolean);state.busy='';renderSel();
+    var text=links.map(function(d){return d.ten+': '+d.link}).join('\n');
+    if(!files.length&&!text){toast('Không tìm thấy file. Anh thử lại nhé.');return}
+    if(files.length<withFile.length)toast('Có '+(withFile.length-files.length)+' tài liệu chưa đọc được file nên bỏ qua.',4000);
+    return doShareMany(files,text,key);
+  },function(){state.busy='';renderSel();toast('Chưa đọc được file.')});
+}
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredInstall=e});
+function installApp(){
+  if(deferredInstall){var dp=deferredInstall;deferredInstall=null;dp.prompt();return}
+  toast('iPhone: bấm nút Chia sẻ rồi chọn "Thêm vào MH chính". Android: bấm dấu ⋮ rồi chọn "Cài đặt ứng dụng".',7000);
+}
+if(window.matchMedia&&matchMedia('(display-mode: standalone)').matches){var ib=document.getElementById('instbtn');if(ib)ib.remove()}
+if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})});
 function openForm(id){
   var o=id?state.docs.filter(function(x){return x.id===id})[0]:null;
   if(id&&!o)return;
@@ -674,6 +753,7 @@ document.addEventListener('submit',function(e){
   function finish(file){
   var rm=!!($('#f-rm')&&$('#f-rm').checked);
   var o={id:old?old.id:newId(),ten:val('f-ten'),loai:val('f-loai'),link:link,nhan:val('f-nhan'),ghichu:val('f-gc'),ngay:today()};
+  if(old&&old.sao)o.sao=true;
   if(old){
     if(old.hasFile&&!file&&!rm){o.hasFile=true;o.fname=old.fname;o.ftype=old.ftype;o.fsize=old.fsize;if(old.fpath)o.fpath=old.fpath;if(old.parts)o.parts=old.parts}
   }
@@ -722,6 +802,17 @@ document.addEventListener('click',function(e){
     if(a==='imgrm'){var r=L.splice(ix,1)[0];if(r)URL.revokeObjectURL(r.url)}
     else{var j=a==='imgup'?ix-1:ix+1;if(j>=0&&j<L.length){var t=L[ix];L[ix]=L[j];L[j]=t}}
     drawThumbs();
+  }
+  else if(a==='sel'){if(el.checked)state.sel[id]=1;else delete state.sel[id];manyCache=null;renderSel()}
+  else if(a==='selclear'){state.sel={};manyCache=null;refresh()}
+  else if(a==='sharemany')shareMany();
+  else if(a==='install')installApp();
+  else if(a==='star'){
+    if(!canEdit())return;
+    var sd=find(id);if(!sd)return;
+    var so={};for(var sk in sd)so[sk]=sd[sk];
+    if(sd.sao)delete so.sao;else so.sao=true;
+    store.put(so).then(function(){return reload()},function(){toast('Chưa lưu được. Anh đăng nhập quản lý lại nhé.')});
   }
   else if(a==='close')closeModal();
   else if(a==='fdoc'){state.fDoc=el.getAttribute('data-v');renderView()}

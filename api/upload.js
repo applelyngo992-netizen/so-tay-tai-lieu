@@ -29,6 +29,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ url: blob.url });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ error: 'server', detail: String((e && e.message) || e).slice(0, 300) });
+    return res.status(500).json({ error: 'server' });
   }
 }
